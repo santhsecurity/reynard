@@ -1,18 +1,24 @@
-// reynard: route the persona's navigator.userAgent + navigator.webdriver through
-// the engine (CAMOU_CONFIG) so they hold in EVERY realm — main thread, Workers
-// (self.navigator.*), and cross-origin iframes — not just the HTTP header.
+// reynard: route persona surfaces that upstream Camoufox navigator-spoofing.patch
+// would own through the engine config (REYNARD_CONFIG, with CAMOU_CONFIG fallback),
+// because that patch does NOT apply on Firefox 150. Each override is read BEFORE the
+// stock path and is a no-op when the key is absent, so non-reynard builds are unchanged.
 //
-// Navigator::Webdriver() returns the CAMOU_CONFIG "navigator.webdriver" bool
-// BEFORE the remote-agent check (BiDi otherwise forces it true — the #1 bot tell).
-// BOTH the instance Navigator::GetUserAgent getter AND the static
-// GetUserAgent(window,doc,...) overload — the path WorkerNavigator::GetUserAgent
-// hops to via GetUserAgentRunnable — read CAMOU_CONFIG "navigator.userAgent",
-// closing worker-UA drift (self.navigator.userAgent in a Worker). moz.build adds
-// /camoucfg to dom/base LOCAL_INCLUDES so the header-only MaskConfig.hpp resolves.
-// Absent the keys, behaviour is unchanged for non-reynard builds.
-// Regenerate: (cd camoufox-*/ && git diff unpatched -- dom/base/Navigator.cpp dom/base/moz.build)
+//   navigator.webdriver            Navigator::Webdriver() returns the config bool before
+//                                  the remote-agent check (BiDi otherwise forces true).
+//   navigator.userAgent            BOTH the instance Navigator::GetUserAgent getter AND
+//                                  the static GetUserAgent(window,doc,...) overload that
+//                                  WorkerNavigator routes through (closes worker-UA drift).
+//   navigator.hardwareConcurrency  BOTH Navigator::HardwareConcurrency() (window) AND
+//                                  WorkerNavigator::HardwareConcurrency() (worker); the
+//                                  stock path leaks the HOST core count — a datacenter
+//                                  tell Arkose reads inside its proof-of-work worker.
+//
+// moz.build adds /camoucfg to dom/base and dom/workers LOCAL_INCLUDES so the header-only
+// MaskConfig.hpp resolves in both realms.
+// Regenerate: (cd camoufox-*/ && git diff unpatched -- dom/base/Navigator.cpp \
+//   dom/base/moz.build dom/workers/WorkerNavigator.cpp dom/workers/moz.build)
 diff --git a/dom/base/Navigator.cpp b/dom/base/Navigator.cpp
-index 23e8de1e55..7b5f89a77a 100644
+index 23e8de1e55..285465d689 100644
 --- a/dom/base/Navigator.cpp
 +++ b/dom/base/Navigator.cpp
 @@ -5,6 +5,11 @@
@@ -45,7 +51,22 @@ index 23e8de1e55..7b5f89a77a 100644
    nsCOMPtr<nsPIDOMWindowInner> window;
  
    if (mWindow) {
-@@ -2095,6 +2111,19 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
+@@ -689,6 +705,14 @@ bool Navigator::GlobalPrivacyControl() {
+ }
+ 
+ uint64_t Navigator::HardwareConcurrency() {
++  // Camoufox/reynard: honor the REYNARD_CONFIG persona core count. Upstream's
++  // navigator-spoofing.patch (which added this) does NOT apply on FF150, so the
++  // stock path below otherwise leaks the HOST's clamped core count — a
++  // datacenter/workstation tell that Arkose reads in main AND worker realms.
++  // Absent the key, behaviour is unchanged.
++  if (auto value = MaskConfig::GetUint64("navigator.hardwareConcurrency")) {
++    return value.value();
++  }
+   workerinternals::RuntimeService* rts =
+       workerinternals::RuntimeService::GetOrCreateService();
+   if (!rts) {
+@@ -2095,6 +2119,19 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
                                   nsAString& aUserAgent) {
    MOZ_ASSERT(NS_IsMainThread());
  
@@ -65,7 +86,7 @@ index 23e8de1e55..7b5f89a77a 100644
    /*
      ResistFingerprinting is migrating to fine-grained control based off
      either a channel or Principal+OriginAttributes
-@@ -2329,6 +2358,16 @@ dom::PrivateAttribution* Navigator::PrivateAttribution() {
+@@ -2329,6 +2366,16 @@ dom::PrivateAttribution* Navigator::PrivateAttribution() {
  
  /* static */
  bool Navigator::Webdriver() {
@@ -97,3 +118,46 @@ index 49c8ac12fa..ef0554a4b5 100644
      "/caps",
      "/docshell/base",
      "/dom/base",
+diff --git a/dom/workers/WorkerNavigator.cpp b/dom/workers/WorkerNavigator.cpp
+index 8f6e1a0dfc..3b5a7979ab 100644
+--- a/dom/workers/WorkerNavigator.cpp
++++ b/dom/workers/WorkerNavigator.cpp
+@@ -4,6 +4,11 @@
+ 
+ #include "mozilla/dom/WorkerNavigator.h"
+ 
++// Camoufox/reynard: REYNARD_CONFIG persona config, so a Worker's
++// self.navigator.hardwareConcurrency matches the main thread instead of leaking
++// the host core count. Header-only; dom/workers/moz.build adds /camoucfg.
++#include "MaskConfig.hpp"
++
+ #include "ErrorList.h"
+ #include "MainThreadUtils.h"
+ #include "RuntimeService.h"
+@@ -214,6 +219,12 @@ void WorkerNavigator::GetUserAgent(nsString& aUserAgent, CallerType aCallerType,
+ }
+ 
+ uint64_t WorkerNavigator::HardwareConcurrency() const {
++  // Camoufox/reynard: honor the REYNARD_CONFIG persona core count so a Worker's
++  // self.navigator.hardwareConcurrency matches the spoofed main thread instead
++  // of leaking the host count (Arkose reads this inside its POW worker).
++  if (auto value = MaskConfig::GetUint64("navigator.hardwareConcurrency")) {
++    return value.value();
++  }
+   RuntimeService* rts = RuntimeService::GetService();
+   MOZ_ASSERT(rts);
+ 
+diff --git a/dom/workers/moz.build b/dom/workers/moz.build
+index f5ec1301a7..9cf53fd910 100644
+--- a/dom/workers/moz.build
++++ b/dom/workers/moz.build
+@@ -76,6 +76,9 @@ UNIFIED_SOURCES += [
+ ]
+ 
+ LOCAL_INCLUDES += [
++    # camoufox/reynard: header-only MaskConfig.hpp so WorkerNavigator can read
++    # the REYNARD_CONFIG persona (hardwareConcurrency) in the worker realm.
++    "/camoucfg",
+     "/caps",
+     "/dom/base",
+     "/dom/bindings",
