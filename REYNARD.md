@@ -9,33 +9,32 @@ It exists for **authorized** security testing: letting a research agent create
 test accounts and navigate in-scope targets without being misclassified as a
 headless bot. See `NOTICE` and `LICENSE` (MPL-2.0).
 
-## What reynard adds over Camoufox
+## What reynard is, honestly
 
-reynard inherits the full Camoufox patch set (`patches/`) and layers on:
+reynard inherits the **full Camoufox patch set** (`patches/`) — driven over
+**WebDriver BiDi** (rustenium/foxdriver) rather than Juggler. The deep stealth —
+`navigator.webdriver = false`, persona `userAgent`/`platform`/`hardwareConcurrency`
+in every realm (main, worker, iframe), WebGL/canvas/audio/screen/timezone/WebRTC
+noise — is the inherited Camoufox C++ layer, applied in canonical order via the
+standard build flow (below). On this Firefox build it compiles and runs clean.
+
+reynard's own deltas today:
 
 ### `REYNARD_CONFIG` engine config (renamed from `CAMOU_CONFIG`)
 `additions/camoucfg/MaskConfig.hpp` reads the persona JSON from
 `REYNARD_CONFIG[_<n>]` first, falling back to the upstream `CAMOU_CONFIG[_<n>]`.
 The rename is **additive** — older binaries and launchers keep working — so the
-fork can decouple from the Camoufox brand without a flag day.
+fork decouples from the Camoufox brand without a flag day.
 
-### `navigator.webdriver` honored under WebDriver BiDi
-`patches/reynard-navigator-ua-config-fallback.patch` makes
-`Navigator::Webdriver()` return the `REYNARD_CONFIG` `navigator.webdriver` bool
-**before** the remote-agent check. Plain Firefox driven over BiDi forces
-`navigator.webdriver = true` (the #1 bot tell, e.g. sannysoft "WebDriver"); the
-`dom.webdriver.enabled` pref cannot override an active remote agent. This patch
-pins it `false` per-persona while leaving the BiDi remote agent connected — the
-key enabler for driving reynard over [rustenium](https://crates.io)/foxdriver
-BiDi instead of Juggler.
+### Per-identity device noise + WebRTC masking (in the consumer, not the engine)
+The consuming driver (Santh's `guise` / `guise-bridge`) derives a stable seed per
+account and sends `canvas:seed`/`audio:seed`/`fonts:spacing_seed` so different
+accounts render as different devices, and masks the WebRTC IP via the
+content-callable `window.setWebRTCIPv4` so `RTCPeerConnection` never leaks the
+real public IP. These ride on top of the engine; the engine just honors the keys.
 
-### `navigator.userAgent` coherent in every realm
-The same patch adds a `REYNARD_CONFIG` `navigator.userAgent` fallback to **both**
-the instance `Navigator::GetUserAgent` getter **and** the static
-`GetUserAgent(window, doc, …)` overload that `WorkerNavigator` routes through.
-Without the latter, `self.navigator.userAgent` inside a Web Worker leaks the
-stock build UA while the main thread reports the persona — a trivial worker-UA
-drift tell. reynard closes it: main-thread and worker UA match the persona.
+Bespoke *beyond-Camoufox* engine patches (closing Camoufox's own residual tells)
+are in progress, not yet shipped here.
 
 ## Building
 
