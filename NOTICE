@@ -1,0 +1,33 @@
+reynard
+=======
+
+reynard is a hardened, stealth-focused fork of Camoufox, which is itself a
+patched build of Mozilla Firefox (Gecko). It is distributed under the Mozilla
+Public License 2.0 (see LICENSE), the same license as its upstreams.
+
+Upstream attribution
+--------------------
+- Camoufox — https://github.com/daijro/camoufox  (MPL-2.0)
+  reynard inherits Camoufox's anti-fingerprinting patch set (navigator, screen,
+  WebGL, WebRTC, audio, fonts, timezone, locale, …) and its build tooling.
+- Mozilla Firefox / Gecko — https://www.mozilla.org  (MPL-2.0)
+  The browser engine being patched.
+
+All trademarks (Firefox, Mozilla, and any OS vendor marks) belong to their
+respective owners. reynard is not affiliated with or endorsed by Mozilla,
+the Camoufox project, or any browser/OS vendor.
+
+Bundled fonts are NOT redistributed
+-----------------------------------
+Upstream Camoufox bundles proprietary OS fonts (macOS / Windows / Tor-Browser
+Linux sets) under bundle/fonts/ for font-fingerprint coherence. Those payloads
+are copyrighted by their respective vendors and are intentionally OMITTED from
+this public repository. See bundle/fonts/000_README.txt for how to supply them
+from an upstream Camoufox release before building a font-coherent persona.
+
+Purpose
+-------
+reynard exists for authorized security testing — letting a security-research
+agent operate on consenting / in-scope targets without being misclassified as a
+headless bot. It is defensive tooling, not a means to defeat protections on
+systems you are not authorized to test.

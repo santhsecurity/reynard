@@ -1,0 +1,99 @@
+// reynard: route the persona's navigator.userAgent + navigator.webdriver through
+// the engine (CAMOU_CONFIG) so they hold in EVERY realm — main thread, Workers
+// (self.navigator.*), and cross-origin iframes — not just the HTTP header.
+//
+// Navigator::Webdriver() returns the CAMOU_CONFIG "navigator.webdriver" bool
+// BEFORE the remote-agent check (BiDi otherwise forces it true — the #1 bot tell).
+// BOTH the instance Navigator::GetUserAgent getter AND the static
+// GetUserAgent(window,doc,...) overload — the path WorkerNavigator::GetUserAgent
+// hops to via GetUserAgentRunnable — read CAMOU_CONFIG "navigator.userAgent",
+// closing worker-UA drift (self.navigator.userAgent in a Worker). moz.build adds
+// /camoucfg to dom/base LOCAL_INCLUDES so the header-only MaskConfig.hpp resolves.
+// Absent the keys, behaviour is unchanged for non-reynard builds.
+// Regenerate: (cd camoufox-*/ && git diff unpatched -- dom/base/Navigator.cpp dom/base/moz.build)
+diff --git a/dom/base/Navigator.cpp b/dom/base/Navigator.cpp
+index 23e8de1e55..7b5f89a77a 100644
+--- a/dom/base/Navigator.cpp
++++ b/dom/base/Navigator.cpp
+@@ -5,6 +5,11 @@
+ // Needs to be first.
+ #include "Navigator.h"
+ 
++// Camoufox/reynard: global fingerprint config (CAMOU_CONFIG). The upstream
++// navigator-spoofing.patch does not apply cleanly against this Firefox version,
++// so the JS `navigator.userAgent` getter below reads the config directly.
++#include "MaskConfig.hpp"
++
+ #include "Geolocation.h"
+ #include "base/basictypes.h"
+ #include "mozilla/Components.h"
+@@ -263,6 +268,17 @@ void Navigator::Invalidate() {
+ 
+ void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
+                              ErrorResult& aRv) const {
++  // Camoufox/reynard: global config fallback for userAgent. Mirrors the
++  // GetAppVersion fallback so a persona injected via CAMOU_CONFIG reaches the
++  // JS `navigator.userAgent` getter (not just the HTTP header), even when the
++  // browser is driven over WebDriver BiDi rather than the Juggler/Playwright
++  // per-context path. Without this the getter falls through to the native build
++  // UA and leaks the "Camoufox/<ver>" brand.
++  if (auto value = MaskConfig::GetString("navigator.userAgent")) {
++    aUserAgent.Assign(NS_ConvertUTF8toUTF16(value.value().c_str()));
++    return;
++  }
++
+   nsCOMPtr<nsPIDOMWindowInner> window;
+ 
+   if (mWindow) {
+@@ -2095,6 +2111,19 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
+                                  nsAString& aUserAgent) {
+   MOZ_ASSERT(NS_IsMainThread());
+ 
++  // Camoufox/reynard: global config fallback for userAgent, mirroring the
++  // instance Navigator::GetUserAgent getter. This static overload is the path
++  // WorkerNavigator::GetUserAgent uses (it hops to the main thread via
++  // GetUserAgentRunnable and calls this). Without the same fallback here a
++  // Worker's `self.navigator.userAgent` would leak the stock build UA while the
++  // main thread reports the persona — a trivial worker-drift tell, and Arkose's
++  // proof-of-work runs inside Workers/iframes. Absent the CAMOU_CONFIG key the
++  // behaviour is unchanged.
++  if (auto value = MaskConfig::GetString("navigator.userAgent")) {
++    aUserAgent.Assign(NS_ConvertUTF8toUTF16(value.value().c_str()));
++    return NS_OK;
++  }
++
+   /*
+     ResistFingerprinting is migrating to fine-grained control based off
+     either a channel or Principal+OriginAttributes
+@@ -2329,6 +2358,16 @@ dom::PrivateAttribution* Navigator::PrivateAttribution() {
+ 
+ /* static */
+ bool Navigator::Webdriver() {
++  // Camoufox/reynard: honor a CAMOU_CONFIG override. A stealth-automation
++  // session is driven over WebDriver BiDi, so the remote-agent check below would
++  // otherwise force navigator.webdriver=true — the single most common bot tell
++  // (sannysoft "WebDriver (New)"). The pref dom.webdriver.enabled cannot fix
++  // this (an active remote agent forces true regardless). When the persona sets
++  // "navigator.webdriver", the engine returns it; absent the key, behaviour is
++  // unchanged for non-reynard builds/uses.
++  if (auto wd = MaskConfig::GetBool("navigator.webdriver")) {
++    return wd.value();
++  }
+ #ifdef ENABLE_WEBDRIVER
+   nsCOMPtr<nsIMarionette> marionette = do_GetService(NS_MARIONETTE_CONTRACTID);
+   if (marionette) {
+diff --git a/dom/base/moz.build b/dom/base/moz.build
+index 49c8ac12fa..ef0554a4b5 100644
+--- a/dom/base/moz.build
++++ b/dom/base/moz.build
+@@ -562,6 +562,10 @@ LOCAL_INCLUDES += [
+     "../events",
+     "../media",
+     "../network",
++    # camoufox/reynard: header-only MaskConfig.hpp (+ sibling json.hpp) so
++    # Navigator::GetUserAgent can read the CAMOU_CONFIG persona. Upstream's
++    # navigator-spoofing.patch would add this; it failed to apply on FF150.
++    "/camoucfg",
+     "/caps",
+     "/docshell/base",
+     "/dom/base",
