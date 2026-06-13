@@ -1,18 +1,11 @@
 # Local builds
 /camoufox-*
-/reynard-*
 /firefox-*
 /mozilla-unified
 dist/
 bin/
 launch
 launch.exe
-
-# Proprietary OS font payloads — NOT redistributable (see bundle/fonts/000_README.txt).
-# Supply locally from an upstream Camoufox release before building.
-/bundle/fonts/linux/
-/bundle/fonts/macos/
-/bundle/fonts/windows/
 
 
 # Internal testing
@@ -85,7 +78,3 @@ node_modules/
 proxies.txt
 checks-bundle.js
 .env
-
-# Proprietary Segoe GUI fonts (upstream pythonlib) — not redistributable
-pythonlib/camoufox/gui/assets/SegUIVar.ttf
-pythonlib/camoufox/gui/assets/segmdl2.ttf
