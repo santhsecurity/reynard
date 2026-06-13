@@ -53,6 +53,11 @@ find "$EXPORT" -type f \
   \( -iname '*.ttf' -o -iname '*.ttc' -o -iname '*.otf' -o -iname '*.dfont' \) -delete
 find "$EXPORT/bundle/fonts" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
+# --- Strip editor / OS junk that should never be published -------------------
+find "$EXPORT" -type f \
+  \( -name '.DS_Store' -o -name 'Thumbs.db' -o -name '*.pyc' -o -name '*.old' \) -delete 2>/dev/null || true
+find "$EXPORT" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+
 # --- FAIL-CLOSED legal gate -------------------------------------------------
 # Refuse to publish if any font payload survived, by extension OR by living
 # under bundle/fonts/ (minus the two allowed text files).

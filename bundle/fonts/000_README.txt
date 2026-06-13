@@ -1,3 +1,16 @@
+REYNARD NOTE
+============
+
+The font PAYLOADS (bundle/fonts/{linux,macos,windows}) are NOT included in this
+public repository — they are proprietary, copyrighted OS fonts (see the upstream
+disclaimer below) and are not redistributable. To build a font-fingerprint-
+coherent persona, copy the matching bundle/fonts/<os>/ tree from an upstream
+Camoufox release (https://github.com/daijro/camoufox) into this directory before
+`make build`. `cleanfonts.sh` (kept) documents the expected layout.
+
+----------------------------------------------------------------------
+Upstream Camoufox bundle/fonts README (verbatim):
+
 DO NOT MODIFY THE CONTENTS OF THIS DIRECTORY
 
 Any adjustment to bundled fonts will result in an altered fingerprint. Font
