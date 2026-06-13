@@ -1,0 +1,51 @@
+name: repo hygiene
+
+# Fast, build-free guards on the PUBLIC reynard tree. The full engine build +
+# release lives in build.yml; this just enforces the invariants the publish
+# pipeline (scripts/publish-reynard.sh) maintains, so even a hand push can't
+# reintroduce a proprietary-font leak or editor junk.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No font payloads may be committed (proprietary OS fonts are not redistributable)
+        run: |
+          set -euo pipefail
+          leak="$(git ls-files | grep -iE '\.(ttf|ttc|otf|dfont)$' || true)"
+          # Anything under bundle/fonts/ other than the README + regeneration recipe
+          # (catches extensionless Multiple-Master fonts like TimesLTMM/HelveLTMM).
+          payload="$(git ls-files 'bundle/fonts/*' \
+            | grep -vE '^bundle/fonts/(000_README\.txt|cleanfonts\.sh)$' || true)"
+          if [ -n "${leak}${payload}" ]; then
+            echo "::error::non-redistributable font payload committed to the public repo:"
+            printf '%s\n' "${leak}" "${payload}"
+            exit 1
+          fi
+          echo "OK — zero font payloads."
+
+      - name: Required product + attribution files present
+        run: |
+          set -euo pipefail
+          for f in NOTICE LICENSE REYNARD.md README.md; do
+            test -f "$f" || { echo "::error::missing required file: $f"; exit 1; }
+          done
+          echo "OK — NOTICE / LICENSE / REYNARD.md / README.md present."
+
+      - name: No editor / OS junk committed
+        run: |
+          set -euo pipefail
+          junk="$(git ls-files | grep -iE '(^|/)(\.DS_Store|Thumbs\.db)$|\.pyc$|/__pycache__/' || true)"
+          if [ -n "${junk}" ]; then
+            echo "::error::editor/OS junk committed:"
+            printf '%s\n' "${junk}"
+            exit 1
+          fi
+          echo "OK — no junk."
