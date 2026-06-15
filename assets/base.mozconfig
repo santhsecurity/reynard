@@ -7,10 +7,20 @@ ac_add_options --disable-debug
 ac_add_options --disable-default-browser-agent
 ac_add_options --disable-tests
 ac_add_options --disable-updater
+# --enable-jxl left OFF deliberately: stock Firefox 150 RELEASE does not ship JXL
+#   decode, so enabling it would add a codec stock FF lacks = a codec-fingerprint
+#   tell (Screwdriver: coherence over capability). --enable-hardening left OFF:
+#   perf cost, not a coherence requirement (evaluate separately).
 # ac_add_options --enable-hardening
 # ac_add_options --enable-jxl
-# ac_add_options --enable-optimize
+ac_add_options --enable-optimize
 ac_add_options --enable-release
+# --enable-rust-simd left OFF: it activates encoding_rs's portable-SIMD path, but the
+#   vendored encoding_rs calls Mask::select() while the current Rust nightly moved that
+#   to a `Select` trait not in scope (E0599, build fails at libgkrust). Stock FF-150
+#   RELEASE does not enable rust-simd either, so dropping it is also the coherent choice
+#   (no fingerprint surface — internal codegen only). Re-enable only with a matching
+#   encoding_rs patch + toolchain.
 # ac_add_options --enable-rust-simd
 
 ac_add_options --disable-system-policies
@@ -24,9 +34,16 @@ ac_add_options --with-unsigned-addon-scopes=app,system
 
 ac_add_options --enable-bootstrap
 
-# Use ccache for faster incremental rebuilds (install: brew install ccache)
-# Safe no-op if ccache is not installed — build proceeds without caching.
-ac_add_options --with-ccache=ccache
+# Pin the Mozilla-bootstrapped clang. The host shell exports
+# CC/CXX="distcc gcc" (a distcc distributed-build setup); that leaks into
+# cc-rs/swgl and compiles system GCC 13 against the pinned GCC-10 sysroot, which
+# fails (__is_nothrow_convertible clash). Exporting clang here overrides the
+# inherited env for the whole build. (ccache dropped — bundled clang is fast
+# enough and ccache-on-distcc was the trap.)
+export CC="$HOME/.mozbuild/clang/bin/clang"
+export CXX="$HOME/.mozbuild/clang/bin/clang++"
+export HOST_CC="$HOME/.mozbuild/clang/bin/clang"
+export HOST_CXX="$HOME/.mozbuild/clang/bin/clang++"
 
 export MOZ_REQUIRE_SIGNING=
 
@@ -37,4 +54,19 @@ mk_add_options MOZ_TELEMETRY_REPORTING=0
 mk_add_options MOZ_INSTALLER=0
 mk_add_options MOZ_AUTOMATION_INSTALLER=0
 
-# ac_add_options --enable-lto=cross
+# Release-coherence + perf (R201–R206): stock Firefox 150 release ships optimize +
+# LTO, so matching them moves reynard's codegen/timing CLOSER to a real release
+# build, not merely faster. Gate after build: reynard_gate + tls + creepjs must
+# stay green (a perf flag must not shift any fingerprint surface).
+#
+# THIN (clang C/C++ ThinLTO), NOT cross: `--enable-lto=cross` makes rustc emit
+# LLVM bitcode (linker-plugin-LTO) so lld can LTO C/C++ and Rust together — but
+# that REQUIRES rustc's LLVM version to match the linker's. We pin mozilla-clang
+# 20 (lld = LLVM 20) while rustc-nightly ships a different LLVM, so lld hit
+# `Invalid record` reading libgkrust.a's bitcode and libxul.so failed to link
+# (Mozilla's official builds only get cross-LTO because they ship a rustc built
+# against their exact clang). ThinLTO keeps Rust as normal objects (linked, not
+# bitcode-merged) and LTOs the C/C++ — the bulk of the perf win, links cleanly,
+# faster + lower-RAM than full. The codegen delta vs cross-LTO is internal to
+# libxul and not a web-observable fingerprint surface.
+ac_add_options --enable-lto=thin
